@@ -1,6 +1,6 @@
+use server::Server;
 use tokio::runtime::Builder;
 use tracing_subscriber::fmt::Subscriber;
-use server::Server;
 
 fn main() {
     Subscriber::builder()

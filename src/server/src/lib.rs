@@ -1,13 +1,14 @@
-mod service;
+mod command;
 mod parse;
 mod reply;
+mod service;
 
 pub(crate) use service::Service;
 
+use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio::spawn;
 use tracing::info;
-use std::net::SocketAddr;
 
 pub struct Server {
     addr: SocketAddr,
@@ -15,9 +16,7 @@ pub struct Server {
 
 impl Server {
     pub fn new(addr: SocketAddr) -> Self {
-        Self {
-            addr
-        }
+        Self { addr }
     }
 
     pub async fn run(self) {

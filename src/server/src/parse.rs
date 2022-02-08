@@ -19,16 +19,16 @@ pub(super) fn parse_array_len(buf: &str) -> IResult<&str, i32> {
     delimited(tag("*"), i32, line_ending)(buf)
 }
 
-pub(super) fn parse_array(buf: &str) -> IResult<&str, Parse<'_>> {
-    map(
-        delimited(tag("*"), many1(parse_alt), line_ending),
-        |result| Parse::Array(result),
-    )(buf)
-}
+// pub(super) fn parse_array(buf: &str) -> IResult<&str, Parse<'_>> {
+//     map(
+//         delimited(tag("*"), many1(parse_alt), line_ending),
+//         |result| Parse::Array(result),
+//     )(buf)
+// }
 
-pub(super) fn parse_alt(buf: &str) -> IResult<&str, Parse<'_>> {
-    alt((parse_array, parse_simple))(buf)
-}
+// pub(super) fn parse_alt(buf: &str) -> IResult<&str, Parse<'_>> {
+//     alt((parse_array, parse_simple))(buf)
+// }
 
 pub(super) fn parse_simple(buf: &str) -> IResult<&str, Parse<'_>> {
     map(
@@ -37,17 +37,17 @@ pub(super) fn parse_simple(buf: &str) -> IResult<&str, Parse<'_>> {
     )(buf)
 }
 
-pub(super) fn parse_bulk(buf: &str) -> IResult<&str, Parse<'_>> {
+pub(super) fn parse_bulk(buf: &str) -> IResult<&str, Option<&str>> {
     let (buf, size) = delimited(tag("$"), i32, line_ending)(buf)?;
     if size < 0 {
-        Ok((buf, Parse::Bulk(None)))
+        Ok((buf, None))
     } else {
         map(terminated(not_line_ending, line_ending), |content: &str| {
             let size = size as usize;
             if content.len() == size {
-                Parse::Bulk(Some(content))
+                Some(content)
             } else {
-                Parse::Bulk(None)
+                None
             }
         })(buf)
     }
@@ -64,12 +64,12 @@ fn test_parse_simple() {
 fn test_parse_bulk_1() {
     let target = "$6\r\nfoobar\r\n";
     let (_, Parse) = parse_bulk(&target).unwrap();
-    assert_eq!(Parse, Parse::Bulk(Some("foobar")));
+    assert_eq!(Parse, Some("foobar"));
 }
 
 #[test]
 fn test_parse_bulk_2() {
     let target = "$-1\r\n";
     let (_, Parse) = parse_bulk(&target).unwrap();
-    assert_eq!(Parse, Parse::Bulk(None));
+    assert_eq!(Parse, None);
 }

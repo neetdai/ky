@@ -3,7 +3,7 @@ mod parse;
 mod reply;
 mod service;
 
-pub(crate) use service::Service;
+pub(crate) use service::{Collections, Service};
 
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
@@ -20,6 +20,7 @@ impl Server {
     }
 
     pub async fn run(self) {
+        let collections = Collections::<String, String>::new();
         info!("listen on {}", self.addr);
         let listen = TcpListener::bind(self.addr).await.unwrap();
 
@@ -27,7 +28,7 @@ impl Server {
             let (stream, addr) = listen.accept().await.unwrap();
             info!("client {}", addr);
             let service = Service::new(stream);
-            spawn(service.run());
+            spawn(service.run(collections.clone()));
         }
     }
 }

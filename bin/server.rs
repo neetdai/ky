@@ -1,5 +1,6 @@
 use server::Server;
 use tokio::runtime::Builder;
+use tracing::Level;
 use tracing_subscriber::fmt::Subscriber;
 
 fn main() {
@@ -7,6 +8,7 @@ fn main() {
         .with_file(true)
         .with_line_number(true)
         .with_level(true)
+        // .with_max_level(Level::TRACE)
         .init();
 
     Builder::new_multi_thread()

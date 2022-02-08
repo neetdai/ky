@@ -1,13 +1,48 @@
 use super::command::Set;
 use super::parse::{parse_array_len, parse_bulk, Parse};
+use super::reply::{reply_integer, reply_bulk, reply_array};
+use collections::List;
+use parking_lot::RwLock;
+use std::cmp::Eq;
 use std::fmt::Write;
+use std::hash::Hash;
 use std::io::Error as IoError;
 use std::num::ParseIntError;
 use std::str::FromStr;
+use std::sync::Arc;
 use thiserror::Error;
-use tokio::io::{split, AsyncBufReadExt, BufReader, ReadHalf, WriteHalf, AsyncWriteExt};
+use tokio::io::{split, AsyncBufReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
-use tracing::error;
+use tracing::{error, trace};
+
+macro_rules! parse_bulk {
+    ($content_str: expr) => {
+        match parse_bulk($content_str) {
+            Ok((tmp, Some(field))) => (tmp, field),
+            Err(e) => return Err(Error::Protocol(e.to_string())),
+            _ => return Err(Error::Protocol(String::from("set command error"))),
+        }
+    };
+}
+
+#[derive(Clone)]
+pub(crate) struct Collections<K, V>
+where
+    K: Eq + Hash,
+{
+    pub(crate) list: Arc<RwLock<List<K, V>>>,
+}
+
+impl<K, V> Collections<K, V>
+where
+    K: Eq + Hash,
+{
+    pub(crate) fn new() -> Self {
+        Self {
+            list: Arc::new(RwLock::new(List::new())),
+        }
+    }
+}
 
 #[derive(Debug, Error)]
 enum Error {
@@ -31,6 +66,9 @@ enum Message {
     Ping,
     Command,
     Set(Set),
+    Lpush { key: String, values: Vec<String> },
+    Rpush { key: String, values: Vec<String> },
+    Lrange { key: String, start: isize, stop: isize },
     Config,
 }
 
@@ -49,7 +87,7 @@ impl Service {
         }
     }
 
-    pub(crate) async fn run(mut self) {
+    pub(crate) async fn run(mut self, collections: Collections<String, String>) {
         loop {
             match self.parse().await {
                 Ok(Message::Ping) => {
@@ -71,6 +109,46 @@ impl Service {
                     }
                 }
                 Ok(Message::Set(set)) => {}
+                Ok(Message::Lpush { key, mut values }) => {
+                    let len = {
+                        let mut list = collections.list.write();
+                        let len = (*list).lpush(key, &mut values);
+                        len as isize
+                    };
+                    if let Err(e) = reply_integer(&mut self.write_stream, len).await {
+                        error!("{}", e);
+                        break;
+                    }
+                }
+                Ok(Message::Rpush { key, mut values }) => {
+                    let len = {
+                        let mut list = collections.list.write();
+                        let len = (*list).rpush(key, &mut values);
+                        len as isize
+                    };
+                    if let Err(e) = reply_integer(&mut self.write_stream, len).await {
+                        error!("{}", e);
+                        break;
+                    }
+                }
+                Ok(Message::Lrange {key, start, stop}) => {
+                    // let list = {
+                    //     let list = collections.list.read();
+                    //     list.lrange(&key, start, stop)
+                    //         .map(|items| {
+                    //             items.iter()
+                    //                 .map(|item| {
+                    //                     reply_bulk(item.as_bytes())
+                    //                 })
+                    //                 .collect::<Vec<Vec<u8>>>()
+                    //         })
+                    //         .unwrap_or_default()
+                    // };
+                    // if let Err(e) = self.write_stream.write(reply_array(list.as_slice()).as_slice()).await {
+                    //     error!("{}", e);
+                    //     break;
+                    // }
+                }
                 Err(Error::Close) => break,
                 Err(e) => {
                     error!("{}", e);
@@ -102,10 +180,10 @@ impl Service {
         };
 
         match method {
-            Parse::Bulk(Some("COMMAND")) => Ok(Message::Command),
-            Parse::Bulk(Some("PING")) => Ok(Message::Ping),
-            Parse::Bulk(Some("CONFIG")) => Ok(Message::Config),
-            Parse::Bulk(Some("SET")) => {
+            Some("COMMAND") | Some("command") => Ok(Message::Command),
+            Some("PING") | Some("ping") => Ok(Message::Ping),
+            Some("CONFIG") | Some("config") => Ok(Message::Config),
+            Some("SET") | Some("set") => {
                 let mut content_str = content_str;
                 let mut fields = Vec::new();
                 for _ in 1..size {
@@ -117,23 +195,19 @@ impl Service {
                     content_str = tmp;
                 }
                 match fields.as_slice() {
-                    &[Parse::Bulk(Some(key)), Parse::Bulk(Some(value))] => {
-                        Ok(Message::Set(Set::Add {
-                            key: key.to_string(),
-                            value: value.to_string(),
-                            expire_seconds: None,
-                            expire_milliseconds: None,
-                        }))
-                    }
-                    &[Parse::Bulk(Some(key)), Parse::Bulk(Some(value)), Parse::Bulk(Some(expire_seconds))] => {
-                        Ok(Message::Set(Set::Add {
-                            key: key.to_string(),
-                            value: value.to_string(),
-                            expire_seconds: Some(u64::from_str(expire_seconds)?),
-                            expire_milliseconds: None,
-                        }))
-                    }
-                    [Parse::Bulk(Some(key)), Parse::Bulk(Some(value)), Parse::Bulk(Some(expire_seconds)), Parse::Bulk(Some(expire_millseconds))] => {
+                    &[Some(key), Some(value)] => Ok(Message::Set(Set::Add {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                        expire_seconds: None,
+                        expire_milliseconds: None,
+                    })),
+                    &[Some(key), Some(value), Some(expire_seconds)] => Ok(Message::Set(Set::Add {
+                        key: key.to_string(),
+                        value: value.to_string(),
+                        expire_seconds: Some(u64::from_str(expire_seconds)?),
+                        expire_milliseconds: None,
+                    })),
+                    [Some(key), Some(value), Some(expire_seconds), Some(expire_millseconds)] => {
                         Ok(Message::Set(Set::Add {
                             key: key.to_string(),
                             value: value.to_string(),
@@ -144,29 +218,69 @@ impl Service {
                     _ => Err(Error::Protocol(String::from("set command error"))),
                 }
             }
-            Parse::Bulk(Some("GET")) => {
-                let (_, key) = match parse_bulk(content_str) {
-                    Ok((result, Parse::Bulk(Some(key)))) => (result, key),
-                    Err(e) => return Err(Error::Protocol(e.to_string())),
-                    _ => return Err(Error::Protocol(String::from("set command error"))),
-                };
+            Some("GET") | Some("get") => {
+                let (_, key) = parse_bulk!(content_str);
                 Ok(Message::Set(Set::Get {
                     key: key.to_string(),
                 }))
             }
-            Parse::Bulk(Some("DEL")) => {
+            Some("DEL") | Some("del") => {
                 let mut content_str = content_str;
                 let mut list = Vec::new();
                 for _ in 1..size {
-                    let (tmp, key) = match parse_bulk(content_str) {
-                        Ok((tmp, Parse::Bulk(Some(key)))) => (tmp, key),
-                        Err(e) => return Err(Error::Protocol(e.to_string())),
-                        _ => return Err(Error::Protocol(String::from("set command error"))),
-                    };
+                    let (tmp, key) = parse_bulk!(content_str);
                     content_str = tmp;
                     list.push(key.to_string());
                 }
                 Ok(Message::Set(Set::Delete { list }))
+            }
+            Some("RPUSH") | Some("rpush") => {
+                let mut content_str = content_str;
+                let (tmp, key) = parse_bulk!(content_str);
+
+                content_str = tmp;
+
+                let mut list = Vec::new();
+                for _ in 2..size {
+                    let (tmp, key) = parse_bulk!(content_str);
+                    content_str = tmp;
+                    list.push(key.to_string());
+                }
+                Ok(Message::Rpush {
+                    key: key.to_string(),
+                    values: list,
+                })
+            }
+            Some("LPUSH") | Some("lpush") => {
+                let mut content_str = content_str;
+                let (tmp, key) = parse_bulk!(content_str);
+
+                content_str = tmp;
+
+                let mut list = Vec::new();
+                for _ in 2..size {
+                    let (tmp, key) = parse_bulk!(content_str);
+                    content_str = tmp;
+                    list.push(key.to_string());
+                }
+                Ok(Message::Lpush {
+                    key: key.to_string(),
+                    values: list,
+                })
+            }
+            Some("LRANGE") | Some("lrange") => {
+                let (content_str, key) = parse_bulk!(content_str);
+                let (content_str, start) = parse_bulk!(content_str);
+                let (_, stop) = parse_bulk!(content_str);
+
+                let start = start.parse::<isize>().unwrap_or_default();
+                let stop = stop.parse::<isize>().unwrap_or_default();
+
+                Ok(Message::Lrange {
+                    key: key.to_string(),
+                    start,
+                    stop,
+                })
             }
             _ => Err(Error::Protocol(String::from("command error"))),
         }

@@ -1,6 +1,6 @@
 use super::command::Set;
 use super::parse::{parse_array_len, parse_bulk, Parse};
-use super::reply::{reply_integer, reply_bulk, reply_array};
+use super::reply::{reply_integer, reply_bulk, reply_array_size};
 use collections::List;
 use parking_lot::RwLock;
 use std::cmp::Eq;
@@ -10,8 +10,9 @@ use std::io::Error as IoError;
 use std::num::ParseIntError;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::iter::ExactSizeIterator;
 use thiserror::Error;
-use tokio::io::{split, AsyncBufReadExt, AsyncWriteExt, BufReader, ReadHalf, WriteHalf};
+use tokio::io::{split, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tracing::{error, trace};
 
@@ -74,13 +75,14 @@ enum Message {
 
 pub(crate) struct Service {
     read_stream: BufReader<ReadHalf<TcpStream>>,
-    write_stream: WriteHalf<TcpStream>,
+    write_stream: BufWriter<WriteHalf<TcpStream>>,
 }
 
 impl Service {
     pub(crate) fn new(stream: TcpStream) -> Self {
         let (read_stream, write_stream) = split(stream);
         let read_stream = BufReader::new(read_stream);
+        let write_stream = BufWriter::new(write_stream);
         Self {
             read_stream,
             write_stream,
@@ -95,59 +97,63 @@ impl Service {
                         error!("{}", e);
                         break;
                     }
+                    self.write_stream.flush().await;
                 }
                 Ok(Message::Command) => {
                     if let Err(e) = self.write_stream.write(Self::command_reply()).await {
                         error!("{}", e);
                         break;
                     }
+                    self.write_stream.flush().await;
                 }
                 Ok(Message::Config) => {
                     if let Err(e) = self.write_stream.write(Self::ok_reply()).await {
                         error!("{}", e);
                         break;
                     }
+                    self.write_stream.flush().await;
                 }
                 Ok(Message::Set(set)) => {}
                 Ok(Message::Lpush { key, mut values }) => {
                     let len = {
                         let mut list = collections.list.write();
-                        let len = (*list).lpush(key, &mut values);
+                        let len = (*list).lpush(key, values.into_iter());
                         len as isize
                     };
                     if let Err(e) = reply_integer(&mut self.write_stream, len).await {
                         error!("{}", e);
                         break;
                     }
+                    self.write_stream.flush().await;
                 }
                 Ok(Message::Rpush { key, mut values }) => {
                     let len = {
                         let mut list = collections.list.write();
-                        let len = (*list).rpush(key, &mut values);
+                        let len = (*list).rpush(key, values.into_iter());
                         len as isize
                     };
                     if let Err(e) = reply_integer(&mut self.write_stream, len).await {
                         error!("{}", e);
                         break;
                     }
+                    self.write_stream.flush().await;
                 }
                 Ok(Message::Lrange {key, start, stop}) => {
-                    // let list = {
-                    //     let list = collections.list.read();
-                    //     list.lrange(&key, start, stop)
-                    //         .map(|items| {
-                    //             items.iter()
-                    //                 .map(|item| {
-                    //                     reply_bulk(item.as_bytes())
-                    //                 })
-                    //                 .collect::<Vec<Vec<u8>>>()
-                    //         })
-                    //         .unwrap_or_default()
-                    // };
-                    // if let Err(e) = self.write_stream.write(reply_array(list.as_slice()).as_slice()).await {
-                    //     error!("{}", e);
-                    //     break;
-                    // }
+                    let list = {
+                        let list = collections.list.read();
+                        list.lrange(&key, start, stop)
+                            .map(|items| {
+                                items.cloned()
+                                    .collect::<Vec<String>>()
+                            })
+                            .unwrap_or_default()
+                    };
+                    let len = list.len();
+                    reply_array_size(&mut self.write_stream, len).await;
+                    for item in list {
+                        reply_bulk(&mut self.write_stream, item.as_bytes()).await;
+                    }
+                    self.write_stream.flush().await;
                 }
                 Err(Error::Close) => break,
                 Err(e) => {

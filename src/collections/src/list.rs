@@ -3,7 +3,11 @@ use std::cmp::Eq;
 use std::hash::Hash;
 use std::mem::swap;
 use std::ops::Range;
-use std::collections::VecDeque;
+use std::collections::{
+    VecDeque,
+    vec_deque::Iter,
+};
+use std::iter::{IntoIterator, Extend};
 
 pub struct List<K, V> {
     inner: HashMap<K, VecDeque<V>>,
@@ -21,42 +25,46 @@ impl<K, V> List<K, V>
 where
     K: Eq + Hash,
 {
-    pub fn rpush(&mut self, key: K, values: &mut Vec<V>) -> usize {
-        let mut values_len = values.len();
-        let values_len = &mut values_len;
-        self.inner
-            .entry(key)
-            .and_modify(|list| {
-                *values_len += list.len();
-                list.append(values);
-            })
-            .or_insert_with(|| {
-                let mut list = Vec::new();
-                list.append(values);
-                list
-            });
-        *values_len
+    pub fn rpush<I>(&mut self, key: K, values: I) -> usize where I: IntoIterator<Item = V> {
+        match self.inner.get_key_value_mut(&key) {
+            Some((_, list)) => {
+                list.extend(values);
+                list.len()
+            },
+            None => {
+                let mut list = VecDeque::new();
+                list.extend(values);
+                let len = list.len();
+                self.inner.insert(key, list);
+                len
+            }
+        }
     }
 
-    pub fn lpush(&mut self, key: K, values: &mut Vec<V>) -> usize {
-        let mut values_len = values.len();
-        let values_len = &mut values_len;
-        self.inner
-            .entry(key)
-            .and_modify(|list| {
-                *values_len += list.len();
-                values.append(list);
-            })
-            .or_insert_with(|| {
-                let mut list = Vec::new();
-                list.append(values);
-                list
-            });
-        *values_len
+    pub fn lpush<I>(&mut self, key: K, values: I) -> usize where I: IntoIterator<Item = V> {
+        match self.inner.get_key_value_mut(&key) {
+            Some((_, list)) => {
+                let mut len = list.len();
+                for item in values {
+                    len += 1;
+                    list.push_front(item);
+                }
+                len
+            },
+            None => {
+                let mut list = VecDeque::new();
+                for item in values {
+                    list.push_front(item);
+                }
+                let len = list.len();
+                self.inner.insert(key, list);
+                len
+            }
+        }
     }
 
-    fn range(inner: &[V], mut start: isize, mut stop: isize) -> Range<usize> {
-        let len = inner.len() as isize;
+    fn range(len: usize, mut start: isize, mut stop: isize) -> Range<usize> {
+        let len = len as isize;
         if start < 0 {
             start += len;
         }
@@ -75,10 +83,10 @@ where
         Range { start: start as usize, end: (stop + 1) as usize }
     }
 
-    pub fn lrange(&self, key: &K, start: isize, stop: isize) -> Option<&[V]> {
+    pub fn lrange(&self, key: &K, start: isize, stop: isize) -> Option<Iter<'_, V>> {
         self.inner.get(key).map(|list| {
-            let range = Self::range(list, start, stop);
-            &list[range]
+            let range = Self::range(list.len(), start, stop);
+            list.range(range)
         })
     }
 }

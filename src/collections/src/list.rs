@@ -1,13 +1,10 @@
 use hashbrown::HashMap;
 use std::cmp::Eq;
+use std::collections::{vec_deque::Iter, VecDeque};
 use std::hash::Hash;
+use std::iter::{Extend, IntoIterator};
 use std::mem::swap;
 use std::ops::Range;
-use std::collections::{
-    VecDeque,
-    vec_deque::Iter,
-};
-use std::iter::{IntoIterator, Extend};
 
 pub struct List<K, V> {
     inner: HashMap<K, VecDeque<V>>,
@@ -25,12 +22,15 @@ impl<K, V> List<K, V>
 where
     K: Eq + Hash,
 {
-    pub fn rpush<I>(&mut self, key: K, values: I) -> usize where I: IntoIterator<Item = V> {
+    pub fn rpush<I>(&mut self, key: K, values: I) -> usize
+    where
+        I: IntoIterator<Item = V>,
+    {
         match self.inner.get_key_value_mut(&key) {
             Some((_, list)) => {
                 list.extend(values);
                 list.len()
-            },
+            }
             None => {
                 let mut list = VecDeque::new();
                 list.extend(values);
@@ -41,7 +41,10 @@ where
         }
     }
 
-    pub fn lpush<I>(&mut self, key: K, values: I) -> usize where I: IntoIterator<Item = V> {
+    pub fn lpush<I>(&mut self, key: K, values: I) -> usize
+    where
+        I: IntoIterator<Item = V>,
+    {
         match self.inner.get_key_value_mut(&key) {
             Some((_, list)) => {
                 let mut len = list.len();
@@ -50,7 +53,7 @@ where
                     list.push_front(item);
                 }
                 len
-            },
+            }
             None => {
                 let mut list = VecDeque::new();
                 for item in values {
@@ -80,7 +83,10 @@ where
         if stop >= len {
             stop = len - 1;
         }
-        Range { start: start as usize, end: (stop + 1) as usize }
+        Range {
+            start: start as usize,
+            end: (stop + 1) as usize,
+        }
     }
 
     pub fn lrange(&self, key: &K, start: isize, stop: isize) -> Option<Iter<'_, V>> {

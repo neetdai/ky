@@ -14,3 +14,6 @@ server = {path = "src/server"}
 [[bin]]
 name = "server"
 path = "./bin/server.rs"
+
+[profile.release]
+debug = true

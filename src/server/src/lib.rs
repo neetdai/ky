@@ -1,4 +1,4 @@
-mod command;
+mod cmd;
 mod parse;
 mod reply;
 mod service;

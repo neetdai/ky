@@ -1,5 +1,5 @@
 // use super::command::Command;
-use super::parse::{parse_array_len, parse_bulk, Parse};
+use super::parse::{parse_array_len, parse_bulk};
 use super::reply::{reply_array_size, reply_bulk, reply_integer};
 use collections::List;
 use parking_lot::RwLock;
@@ -47,7 +47,7 @@ where
 }
 
 #[derive(Debug, Error)]
-enum Error {
+pub(crate) enum Error {
     #[error("io error `{0}`")]
     Io(#[from] IoError),
 
@@ -213,11 +213,13 @@ impl Service {
             Err(e) => return Err(Error::Protocol(e.to_string())),
         };
 
-        match method {
-            Some("COMMAND") | Some("command") => Ok(Message::Command),
-            Some("PING") | Some("ping") => Ok(Message::Ping),
-            Some("CONFIG") | Some("config") => Ok(Message::Config),
-            Some("SET") | Some("set") => {
+        let method = method.ok_or(Error::Protocol(String::from("bulk parse error")))?;
+
+        match method.to_uppercase().as_str() {
+            "COMMAND" => Ok(Message::Command),
+            "PING" => Ok(Message::Ping),
+            "CONFIG" => Ok(Message::Config),
+            "SET" => {
                 let mut content_str = content_str;
                 let mut fields = Vec::new();
                 for _ in 1..size {
@@ -252,13 +254,13 @@ impl Service {
                     _ => Err(Error::Protocol(String::from("set command error"))),
                 }
             }
-            Some("GET") | Some("get") => {
+            "GET" => {
                 let (_, key) = parse_bulk!(content_str);
                 Ok(Message::Get {
                     key: key.to_string(),
                 })
             }
-            Some("DEL") | Some("del") => {
+            "DEL" => {
                 let mut content_str = content_str;
                 let mut keys = Vec::new();
                 for _ in 1..size {
@@ -268,7 +270,7 @@ impl Service {
                 }
                 Ok(Message::Delete { keys })
             }
-            Some("RPUSH") | Some("rpush") => {
+            "RPUSH" => {
                 let mut content_str = content_str;
                 let (tmp, key) = parse_bulk!(content_str);
 
@@ -285,7 +287,7 @@ impl Service {
                     values: list,
                 })
             }
-            Some("LPUSH") | Some("lpush") => {
+            "LPUSH" => {
                 let mut content_str = content_str;
                 let (tmp, key) = parse_bulk!(content_str);
 
@@ -302,7 +304,7 @@ impl Service {
                     values: list,
                 })
             }
-            Some("LRANGE") | Some("lrange") => {
+            "LRANGE" => {
                 let (content_str, key) = parse_bulk!(content_str);
                 let (content_str, start) = parse_bulk!(content_str);
                 let (_, stop) = parse_bulk!(content_str);

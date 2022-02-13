@@ -1,64 +1,57 @@
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    character::complete::{i32, line_ending, not_line_ending, u32},
-    combinator::map,
-    multi::many1,
-    sequence::{delimited, terminated, tuple},
-    IResult,
-};
+use crate::service::Error;
+use std::str::FromStr;
 
-#[derive(PartialEq, Debug)]
-pub(super) enum Parse<'a> {
-    Simple(&'a str),
-    Bulk(Option<&'a str>),
-    Array(Vec<Parse<'a>>),
+pub(super) fn parse_array_len(buf: &str) -> Result<(&str, usize), Error> {
+    let (first, buf) = buf.split_at(1);
+    if first != "*" {
+        return Err(Error::Protocol(String::from("arary sytanx error")));
+    }
+
+    let (size, buf) = buf
+        .split_once("\r\n")
+        .ok_or(Error::Protocol(String::from("arary sytanx error")))?;
+
+    let size =
+        usize::from_str(size).map_err(|e| Error::Protocol(format!("arary size error {}", e)))?;
+
+    Ok((buf, size))
 }
 
-pub(super) fn parse_array_len(buf: &str) -> IResult<&str, i32> {
-    delimited(tag("*"), i32, line_ending)(buf)
-}
+pub(super) fn parse_bulk(buf: &str) -> Result<(&str, Option<&str>), Error> {
+    let (first, buf) = buf.split_at(1);
+    if first != "$" {
+        return Err(Error::Protocol(String::from("bulk sytanx error")));
+    }
 
-// pub(super) fn parse_array(buf: &str) -> IResult<&str, Parse<'_>> {
-//     map(
-//         delimited(tag("*"), many1(parse_alt), line_ending),
-//         |result| Parse::Array(result),
-//     )(buf)
-// }
+    let (size, buf) = buf
+        .split_once("\r\n")
+        .ok_or(Error::Protocol(String::from("bulk sytanx error")))?;
 
-// pub(super) fn parse_alt(buf: &str) -> IResult<&str, Parse<'_>> {
-//     alt((parse_array, parse_simple))(buf)
-// }
+    let size =
+        isize::from_str(size).map_err(|e| Error::Protocol(format!("bulk size error {}", e)))?;
 
-pub(super) fn parse_simple(buf: &str) -> IResult<&str, Parse<'_>> {
-    map(
-        delimited(tag("+"), not_line_ending, line_ending),
-        |result| Parse::Simple(result),
-    )(buf)
-}
+    if size == -1 {
+        return Ok((buf, None));
+    }
 
-pub(super) fn parse_bulk(buf: &str) -> IResult<&str, Option<&str>> {
-    let (buf, size) = delimited(tag("$"), i32, line_ending)(buf)?;
-    if size < 0 {
-        Ok((buf, None))
+    let (content, buf) = buf
+        .split_once("\r\n")
+        .ok_or(Error::Protocol(String::from("bulk sytanx error")))?;
+
+    let size = size as usize;
+    if size == content.len() {
+        Ok((buf, Some(content)))
     } else {
-        map(terminated(not_line_ending, line_ending), |content: &str| {
-            let size = size as usize;
-            if content.len() == size {
-                Some(content)
-            } else {
-                None
-            }
-        })(buf)
+        Err(Error::Protocol(String::from("bulk len error")))
     }
 }
 
-#[test]
-fn test_parse_simple() {
-    let target = "+OK\r\n";
-    let (_, Parse) = parse_simple(&target).unwrap();
-    assert_eq!(Parse, Parse::Simple("OK"));
-}
+// #[test]
+// fn test_parse_simple() {
+//     let target = "+OK\r\n";
+//     let (_, Parse) = parse_simple(&target).unwrap();
+//     assert_eq!(Parse, Parse::Simple("OK"));
+// }
 
 #[test]
 fn test_parse_bulk_1() {

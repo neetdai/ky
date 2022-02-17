@@ -1,6 +1,7 @@
 // use super::command::Command;
 use super::parse::{parse_array_len, parse_bulk};
-use super::reply::{reply_array_size, reply_bulk, reply_integer};
+// use super::reply::{reply_array_size, reply_bulk, reply_integer};
+use super::reply::Reply;
 use collections::List;
 use parking_lot::RwLock;
 use std::cmp::Eq;
@@ -11,10 +12,12 @@ use std::iter::ExactSizeIterator;
 use std::num::ParseIntError;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
 use tokio::io::{split, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::task::spawn_local;
+// use tokio::sync::RwLock;
 use tracing::{error, trace};
 
 macro_rules! parse_bulk {
@@ -112,7 +115,7 @@ impl Service {
     }
 
     pub(crate) async fn run(mut self, collections: Collections<String, String>) {
-        loop {
+        'main: loop {
             match self.parse().await {
                 Ok(Message::Ping) => {
                     if let Err(e) = self.write_stream.write(Self::ping_reply()).await {
@@ -144,42 +147,54 @@ impl Service {
                 Ok(Message::Get { key }) => {}
                 Ok(Message::Delete { keys }) => {}
                 Ok(Message::Lpush { key, mut values }) => {
+                    let collect_list = Arc::clone(&collections.list);
                     let len = {
-                        let mut list = collections.list.write();
+                        let mut list = collect_list.write();
                         let len = (*list).lpush(key.to_string(), values.into_iter());
-                        len as isize
+                        len
                     };
-                    if let Err(e) = reply_integer(&mut self.write_stream, len).await {
+                    if let Err(e) = Reply::from(len).write(&mut self.write_stream).await {
                         error!("{}", e);
-                        break;
+                        break 'main;
                     }
-                    self.write_stream.flush().await;
+                    if let Err(e) = self.write_stream.flush().await {
+                        error!("{}", e);
+                        break 'main;
+                    }
                 }
                 Ok(Message::Rpush { key, mut values }) => {
+                    let collect_list = Arc::clone(&collections.list);
                     let len = {
-                        let mut list = collections.list.write();
+                        let mut list = collect_list.write();
                         let len = (*list).rpush(key.to_string(), values.into_iter());
-                        len as isize
+                        len    
                     };
-                    if let Err(e) = reply_integer(&mut self.write_stream, len).await {
+
+                    if let Err(e) = Reply::from(len).write(&mut self.write_stream).await {
                         error!("{}", e);
-                        break;
+                        break 'main;
                     }
-                    self.write_stream.flush().await;
+                    if let Err(e) = self.write_stream.flush().await {
+                        error!("{}", e);
+                        break 'main;
+                    }
                 }
                 Ok(Message::Lrange { key, start, stop }) => {
                     let list = {
                         let list = collections.list.read();
                         list.lrange(&key.to_string(), start as isize, stop as isize)
-                            .map(|items| items.cloned().collect::<Vec<String>>())
+                            .map(|items| items.map(|item| Reply::from(item.as_str())).collect::<Vec<Reply>>())
                             .unwrap_or_default()
                     };
-                    let len = list.len();
-                    reply_array_size(&mut self.write_stream, len).await;
-                    for item in list {
-                        reply_bulk(&mut self.write_stream, item.as_bytes()).await;
+
+                    if let Err(e) = Reply::from(list).write(&mut self.write_stream).await {
+                        error!("{}", e);
+                        break 'main;
+                    };
+                    if let Err(e) = self.write_stream.flush().await {
+                        error!("{}", e);
+                        break 'main;
                     }
-                    self.write_stream.flush().await;
                 }
                 Err(Error::Close) => break,
                 Err(e) => {

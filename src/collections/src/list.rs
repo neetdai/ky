@@ -95,4 +95,12 @@ where
             list.range(range)
         })
     }
+
+    pub fn lpop(&mut self, key: &K) -> Option<V> {
+        self.inner
+            .get_mut(key)
+            .and_then(|list| {
+                list.pop_front()
+            })
+    }
 }

@@ -1,4 +1,4 @@
-use crate::cmd::builder_trait::Builder;
+use crate::cmd::traits::Builder;
 use crate::cmd::field_builder::FieldBuilder;
 use crate::service::Error;
 use std::str::FromStr;

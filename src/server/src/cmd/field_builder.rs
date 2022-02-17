@@ -43,4 +43,8 @@ impl<'a> FieldBuilder<'a> {
             Ok(None)
         }
     }
+
+    pub(crate) fn get_total(&self) -> usize {
+        self.total
+    }
 }

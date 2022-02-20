@@ -1,8 +1,8 @@
+use crate::service::Error;
+use std::convert::{From, Into};
 use std::io::Result as IoResult;
 use std::string::ToString;
-use std::convert::{From, Into};
 use tokio::io::AsyncWriteExt;
-use crate::service::Error;
 
 const SIMPLE_STRINGS: &[u8; 1] = b"+";
 const ERRORS: &[u8; 1] = b"-";
@@ -169,14 +169,19 @@ impl From<Vec<Reply>> for Reply {
         Reply::Array(inner)
     }
 }
-// impl<I> From<Vec<I>> for Reply where I: Into<Reply> {
-//     fn from(inner: Vec<I>) -> Self {
-//         Reply::Array(inner.into_iter().map(|item| item.into()).collect())
-//     }
-// }
+impl<I> From<Option<I>> for Reply
+where
+    I: Into<Reply>,
+{
+    fn from(inner: Option<I>) -> Self {
+        match inner {
+            Some(inner) => inner.into(),
+            None => Reply::Simple(String::from("nil")),
+        }
+    }
+}
 
 impl Reply {
-
     pub(super) async fn write<A>(&self, write_stream: &mut A) -> IoResult<()>
     where
         A: AsyncWriteExt + Unpin,
@@ -237,7 +242,7 @@ impl Reply {
         Ok(())
     }
 
-    fn transmute(&self, buff: &mut Vec<u8>){
+    fn transmute(&self, buff: &mut Vec<u8>) {
         match self {
             Self::Simple(inner) => {
                 buff.extend_from_slice(SIMPLE_STRINGS);

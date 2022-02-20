@@ -2,7 +2,8 @@
 use super::parse::{parse_array_len, parse_bulk};
 // use super::reply::{reply_array_size, reply_bulk, reply_integer};
 use super::reply::Reply;
-use collections::List;
+use crate::cmd::{Apply, Builder, Delete, FieldBuilder, Get, LPush, RPush, Set};
+use collections::{List, Strings};
 use parking_lot::RwLock;
 use std::cmp::Eq;
 use std::fmt::Write;
@@ -17,7 +18,6 @@ use thiserror::Error;
 use tokio::io::{split, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::task::spawn_local;
-// use tokio::sync::RwLock;
 use tracing::{error, trace};
 
 macro_rules! parse_bulk {
@@ -36,6 +36,8 @@ where
     K: Eq + Hash,
 {
     pub(crate) list: Arc<RwLock<List<K, V>>>,
+
+    pub(crate) strings: Arc<RwLock<Strings<K, V>>>,
 }
 
 impl<K, V> Collections<K, V>
@@ -45,6 +47,7 @@ where
     pub(crate) fn new() -> Self {
         Self {
             list: Arc::new(RwLock::new(List::new())),
+            strings: Arc::new(RwLock::new(Strings::new())),
         }
     }
 }
@@ -116,84 +119,16 @@ impl Service {
 
     pub(crate) async fn run(mut self, collections: Collections<String, String>) {
         'main: loop {
-            match self.parse().await {
-                Ok(Message::Ping) => {
-                    if let Err(e) = self.write_stream.write(Self::ping_reply()).await {
+            let map = collections.clone();
+            match self.process(map).await {
+                Ok(reply) => {
+                    if let Err(e) = reply.write(&mut self.write_stream).await {
                         error!("{}", e);
                         break;
                     }
-                    self.write_stream.flush().await;
-                }
-                Ok(Message::Command) => {
-                    if let Err(e) = self.write_stream.write(Self::command_reply()).await {
+                    if let Err(e) = self.write_stream.flush().await {
                         error!("{}", e);
                         break;
-                    }
-                    self.write_stream.flush().await;
-                }
-                Ok(Message::Config) => {
-                    if let Err(e) = self.write_stream.write(Self::ok_reply()).await {
-                        error!("{}", e);
-                        break;
-                    }
-                    self.write_stream.flush().await;
-                }
-                Ok(Message::Set {
-                    key,
-                    value,
-                    expire_seconds,
-                    expire_milliseconds,
-                }) => {}
-                Ok(Message::Get { key }) => {}
-                Ok(Message::Delete { keys }) => {}
-                Ok(Message::Lpush { key, mut values }) => {
-                    let collect_list = Arc::clone(&collections.list);
-                    let len = {
-                        let mut list = collect_list.write();
-                        let len = (*list).lpush(key.to_string(), values.into_iter());
-                        len
-                    };
-                    if let Err(e) = Reply::from(len).write(&mut self.write_stream).await {
-                        error!("{}", e);
-                        break 'main;
-                    }
-                    if let Err(e) = self.write_stream.flush().await {
-                        error!("{}", e);
-                        break 'main;
-                    }
-                }
-                Ok(Message::Rpush { key, mut values }) => {
-                    let collect_list = Arc::clone(&collections.list);
-                    let len = {
-                        let mut list = collect_list.write();
-                        let len = (*list).rpush(key.to_string(), values.into_iter());
-                        len    
-                    };
-
-                    if let Err(e) = Reply::from(len).write(&mut self.write_stream).await {
-                        error!("{}", e);
-                        break 'main;
-                    }
-                    if let Err(e) = self.write_stream.flush().await {
-                        error!("{}", e);
-                        break 'main;
-                    }
-                }
-                Ok(Message::Lrange { key, start, stop }) => {
-                    let list = {
-                        let list = collections.list.read();
-                        list.lrange(&key.to_string(), start as isize, stop as isize)
-                            .map(|items| items.map(|item| Reply::from(item.as_str())).collect::<Vec<Reply>>())
-                            .unwrap_or_default()
-                    };
-
-                    if let Err(e) = Reply::from(list).write(&mut self.write_stream).await {
-                        error!("{}", e);
-                        break 'main;
-                    };
-                    if let Err(e) = self.write_stream.flush().await {
-                        error!("{}", e);
-                        break 'main;
                     }
                 }
                 Err(Error::Close) => break,
@@ -205,7 +140,7 @@ impl Service {
         }
     }
 
-    async fn parse(&mut self) -> Result<Message, Error> {
+    async fn process(&mut self, collections: Collections<String, String>) -> Result<Reply, Error> {
         let mut buff = String::new();
         self.read_buff(&mut buff).await?;
 
@@ -231,108 +166,48 @@ impl Service {
         let method = method.ok_or(Error::Protocol(String::from("bulk parse error")))?;
 
         match method.to_uppercase().as_str() {
-            "COMMAND" => Ok(Message::Command),
-            "PING" => Ok(Message::Ping),
-            "CONFIG" => Ok(Message::Config),
+            // "COMMAND" => Ok(Message::Command),
+            // "PING" => Ok(Message::Ping),
+            // "CONFIG" => Ok(Message::Config),
             "SET" => {
-                let mut content_str = content_str;
-                let mut fields = Vec::new();
-                for _ in 1..size {
-                    let (tmp, field) = match parse_bulk(content_str) {
-                        Ok((tmp, field)) => (tmp, field),
-                        Err(e) => return Err(Error::Protocol(e.to_string())),
-                    };
-                    fields.push(field);
-                    content_str = tmp;
-                }
-                match fields.as_slice() {
-                    &[Some(key), Some(value)] => Ok(Message::Set {
-                        key: key.to_string(),
-                        value: value.to_string(),
-                        expire_seconds: None,
-                        expire_milliseconds: None,
-                    }),
-                    &[Some(key), Some(value), Some(expire_seconds)] => Ok(Message::Set {
-                        key: key.to_string(),
-                        value: value.to_string(),
-                        expire_seconds: Some(u64::from_str(expire_seconds)?),
-                        expire_milliseconds: None,
-                    }),
-                    [Some(key), Some(value), Some(expire_seconds), Some(expire_millseconds)] => {
-                        Ok(Message::Set {
-                            key: key.to_string(),
-                            value: value.to_string(),
-                            expire_seconds: Some(u64::from_str(expire_seconds)?),
-                            expire_milliseconds: Some(u128::from_str(expire_millseconds)?),
-                        })
-                    }
-                    _ => Err(Error::Protocol(String::from("set command error"))),
-                }
+                let mut builder = FieldBuilder::new(content_str, size - 1);
+                let mut set = Set::build(&mut builder)?;
+                Ok(set.apply(collections.clone()))
             }
             "GET" => {
-                let (_, key) = parse_bulk!(content_str);
-                Ok(Message::Get {
-                    key: key.to_string(),
-                })
+                let mut builder = FieldBuilder::new(content_str, size - 1);
+                let mut get = Get::build(&mut builder)?;
+                Ok(get.apply(collections.clone()))
             }
             "DEL" => {
-                let mut content_str = content_str;
-                let mut keys = Vec::new();
-                for _ in 1..size {
-                    let (tmp, key) = parse_bulk!(content_str);
-                    content_str = tmp;
-                    keys.push(key.to_string());
-                }
-                Ok(Message::Delete { keys })
+                let mut builder = FieldBuilder::new(content_str, size - 1);
+                let mut delete = Delete::build(&mut builder)?;
+                Ok(delete.apply(collections.clone()))
             }
             "RPUSH" => {
-                let mut content_str = content_str;
-                let (tmp, key) = parse_bulk!(content_str);
-
-                content_str = tmp;
-
-                let mut list = Vec::new();
-                for _ in 2..size {
-                    let (tmp, key) = parse_bulk!(content_str);
-                    content_str = tmp;
-                    list.push(key.to_string());
-                }
-                Ok(Message::Rpush {
-                    key: key.to_string(),
-                    values: list,
-                })
+                let mut builder = FieldBuilder::new(content_str, size - 1);
+                let mut rpush = RPush::build(&mut builder)?;
+                Ok(rpush.apply(collections.clone()))
             }
             "LPUSH" => {
-                let mut content_str = content_str;
-                let (tmp, key) = parse_bulk!(content_str);
-
-                content_str = tmp;
-
-                let mut list = Vec::new();
-                for _ in 2..size {
-                    let (tmp, key) = parse_bulk!(content_str);
-                    content_str = tmp;
-                    list.push(key.to_string());
-                }
-                Ok(Message::Lpush {
-                    key: key.to_string(),
-                    values: list,
-                })
+                let mut builder = FieldBuilder::new(content_str, size - 1);
+                let mut lpush = LPush::build(&mut builder)?;
+                Ok(lpush.apply(collections.clone()))
             }
-            "LRANGE" => {
-                let (content_str, key) = parse_bulk!(content_str);
-                let (content_str, start) = parse_bulk!(content_str);
-                let (_, stop) = parse_bulk!(content_str);
+            // "LRANGE" => {
+            //     let (content_str, key) = parse_bulk!(content_str);
+            //     let (content_str, start) = parse_bulk!(content_str);
+            //     let (_, stop) = parse_bulk!(content_str);
 
-                let start = start.parse::<isize>().unwrap_or_default();
-                let stop = stop.parse::<isize>().unwrap_or_default();
+            //     let start = start.parse::<isize>().unwrap_or_default();
+            //     let stop = stop.parse::<isize>().unwrap_or_default();
 
-                Ok(Message::Lrange {
-                    key: key.to_string(),
-                    start,
-                    stop,
-                })
-            }
+            //     Ok(Message::Lrange {
+            //         key: key.to_string(),
+            //         start,
+            //         stop,
+            //     })
+            // }
             _ => Err(Error::Protocol(String::from("command error"))),
         }
     }

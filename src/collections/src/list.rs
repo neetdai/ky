@@ -3,7 +3,6 @@ use std::cmp::Eq;
 use std::collections::{vec_deque::Iter, VecDeque};
 use std::hash::Hash;
 use std::iter::{Extend, IntoIterator};
-use std::mem::swap;
 use std::ops::Range;
 
 pub struct List<K, V> {
@@ -97,10 +96,6 @@ where
     }
 
     pub fn lpop(&mut self, key: &K) -> Option<V> {
-        self.inner
-            .get_mut(key)
-            .and_then(|list| {
-                list.pop_front()
-            })
+        self.inner.get_mut(key).and_then(|list| list.pop_front())
     }
 }

@@ -1,9 +1,9 @@
-use crate::cmd::traits::Builder;
 use crate::cmd::field_builder::FieldBuilder;
+use crate::cmd::traits::{Apply, Builder};
 use crate::service::Error;
-use std::str::FromStr;
-use std::num::ParseIntError;
 use std::convert::Infallible;
+use std::num::ParseIntError;
+use std::str::FromStr;
 
 pub(crate) struct LRange {
     key: String,

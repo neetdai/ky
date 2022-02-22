@@ -65,8 +65,8 @@ where
         }
     }
 
-    fn range(len: usize, mut start: isize, mut stop: isize) -> Range<usize> {
-        let len = len as isize;
+    fn range(len: usize, mut start: i64, mut stop: i64) -> Range<usize> {
+        let len = len as i64;
         if start < 0 {
             start += len;
         }
@@ -88,7 +88,7 @@ where
         }
     }
 
-    pub fn lrange(&self, key: &K, start: isize, stop: isize) -> Option<Iter<'_, V>> {
+    pub fn lrange(&self, key: &K, start: i64, stop: i64) -> Option<Iter<'_, V>> {
         self.inner.get(key).map(|list| {
             let range = Self::range(list.len(), start, stop);
             list.range(range)

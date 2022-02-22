@@ -6,11 +6,16 @@ mod lrange;
 mod rpush;
 mod set;
 mod traits;
+mod ping;
+mod pong;
 
 pub(crate) use delete::Delete;
 pub(crate) use field_builder::FieldBuilder;
 pub(crate) use get::Get;
 pub(crate) use lpush::LPush;
+pub(crate) use lrange::LRange;
 pub(crate) use rpush::RPush;
 pub(crate) use set::Set;
 pub(crate) use traits::{Apply, Builder};
+pub(crate) use ping::Ping;
+pub(crate) use pong::Pong;

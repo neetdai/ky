@@ -2,7 +2,7 @@
 use super::parse::{parse_array_len, parse_bulk};
 // use super::reply::{reply_array_size, reply_bulk, reply_integer};
 use super::reply::Reply;
-use crate::cmd::{Apply, Builder, Delete, FieldBuilder, Get, LPush, RPush, Set};
+use crate::cmd::{Apply, Builder, Delete, FieldBuilder, Get, LPush, LRange, RPush, Set, Ping, Pong};
 use collections::{List, Strings};
 use parking_lot::RwLock;
 use std::cmp::Eq;
@@ -69,38 +69,6 @@ pub(crate) enum Error {
     // Utf8(#[from] Utf8Error),
 }
 
-#[derive(Debug)]
-enum Message {
-    Ping,
-    Command,
-    Set {
-        key: String,
-        value: String,
-        expire_seconds: Option<u64>,
-        expire_milliseconds: Option<u128>,
-    },
-    Get {
-        key: String,
-    },
-    Delete {
-        keys: Vec<String>,
-    },
-    Lpush {
-        key: String,
-        values: Vec<String>,
-    },
-    Rpush {
-        key: String,
-        values: Vec<String>,
-    },
-    Lrange {
-        key: String,
-        start: isize,
-        stop: isize,
-    },
-    Config,
-}
-
 pub(crate) struct Service {
     read_stream: BufReader<ReadHalf<TcpStream>>,
     write_stream: BufWriter<WriteHalf<TcpStream>>,
@@ -156,58 +124,49 @@ impl Service {
             content.push_str(&buff);
         }
 
-        // let (_, command) = Command::parse(content.as_str()).map_err(|e| Error::Protocol(e.to_string()))?;
-        // Ok(command)
         let (content_str, method) = match parse_bulk(content.as_str()) {
             Ok((content, method)) => (content, method),
             Err(e) => return Err(Error::Protocol(e.to_string())),
         };
 
         let method = method.ok_or(Error::Protocol(String::from("bulk parse error")))?;
+        let mut builder = FieldBuilder::new(content_str, size - 1);
 
         match method.to_uppercase().as_str() {
             // "COMMAND" => Ok(Message::Command),
-            // "PING" => Ok(Message::Ping),
+            "PING" => {
+                let ping = Ping::build(&mut builder).unwrap();
+                Ok(ping.apply(collections))
+            },
+            "PONG" => {
+                let pong = Pong::build(&mut builder).unwrap();
+                Ok(pong.apply(collections))
+            }
             // "CONFIG" => Ok(Message::Config),
             "SET" => {
-                let mut builder = FieldBuilder::new(content_str, size - 1);
                 let mut set = Set::build(&mut builder)?;
-                Ok(set.apply(collections.clone()))
+                Ok(set.apply(collections))
             }
             "GET" => {
-                let mut builder = FieldBuilder::new(content_str, size - 1);
                 let mut get = Get::build(&mut builder)?;
-                Ok(get.apply(collections.clone()))
+                Ok(get.apply(collections))
             }
             "DEL" => {
-                let mut builder = FieldBuilder::new(content_str, size - 1);
                 let mut delete = Delete::build(&mut builder)?;
-                Ok(delete.apply(collections.clone()))
+                Ok(delete.apply(collections))
             }
             "RPUSH" => {
-                let mut builder = FieldBuilder::new(content_str, size - 1);
                 let mut rpush = RPush::build(&mut builder)?;
-                Ok(rpush.apply(collections.clone()))
+                Ok(rpush.apply(collections))
             }
             "LPUSH" => {
-                let mut builder = FieldBuilder::new(content_str, size - 1);
                 let mut lpush = LPush::build(&mut builder)?;
-                Ok(lpush.apply(collections.clone()))
+                Ok(lpush.apply(collections))
             }
-            // "LRANGE" => {
-            //     let (content_str, key) = parse_bulk!(content_str);
-            //     let (content_str, start) = parse_bulk!(content_str);
-            //     let (_, stop) = parse_bulk!(content_str);
-
-            //     let start = start.parse::<isize>().unwrap_or_default();
-            //     let stop = stop.parse::<isize>().unwrap_or_default();
-
-            //     Ok(Message::Lrange {
-            //         key: key.to_string(),
-            //         start,
-            //         stop,
-            //     })
-            // }
+            "LRANGE" => {
+                let mut lrange = LRange::build(&mut builder)?;
+                Ok(lrange.apply(collections))
+            }
             _ => Err(Error::Protocol(String::from("command error"))),
         }
     }

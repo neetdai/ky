@@ -2,7 +2,9 @@
 use super::parse::{parse_array_len, parse_bulk};
 // use super::reply::{reply_array_size, reply_bulk, reply_integer};
 use super::reply::Reply;
-use crate::cmd::{Apply, Builder, Delete, FieldBuilder, Get, LPush, LRange, RPush, Set, Ping, Pong};
+use crate::cmd::{
+    Apply, Builder, Delete, FieldBuilder, Get, LPop, LPush, LRange, Ping, Pong, RPush, Set,
+};
 use collections::{List, Strings};
 use parking_lot::RwLock;
 use std::cmp::Eq;
@@ -19,16 +21,6 @@ use tokio::io::{split, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Rea
 use tokio::net::TcpStream;
 use tokio::task::spawn_local;
 use tracing::{error, trace};
-
-macro_rules! parse_bulk {
-    ($content_str: expr) => {
-        match parse_bulk($content_str) {
-            Ok((tmp, Some(field))) => (tmp, field),
-            Err(e) => return Err(Error::Protocol(e.to_string())),
-            _ => return Err(Error::Protocol(String::from("set command error"))),
-        }
-    };
-}
 
 #[derive(Clone)]
 pub(crate) struct Collections<K, V>
@@ -137,7 +129,7 @@ impl Service {
             "PING" => {
                 let ping = Ping::build(&mut builder).unwrap();
                 Ok(ping.apply(collections))
-            },
+            }
             "PONG" => {
                 let pong = Pong::build(&mut builder).unwrap();
                 Ok(pong.apply(collections))
@@ -166,6 +158,10 @@ impl Service {
             "LRANGE" => {
                 let mut lrange = LRange::build(&mut builder)?;
                 Ok(lrange.apply(collections))
+            }
+            "LPOP" => {
+                let mut lpop = LPop::build(&mut builder)?;
+                Ok(lpop.apply(collections))
             }
             _ => Err(Error::Protocol(String::from("command error"))),
         }

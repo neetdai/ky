@@ -6,11 +6,11 @@ use crate::service::Error;
 use std::convert::Infallible;
 use std::str::FromStr;
 
-pub(crate) struct Get {
+pub(crate) struct LPop {
     key: String,
 }
 
-impl Builder for Get {
+impl Builder for LPop {
     fn build<'a>(adpater: &mut FieldBuilder<'a>) -> Result<Self, Error> {
         Ok(Self {
             key: adpater.get_field::<String, Infallible>()?,
@@ -18,12 +18,12 @@ impl Builder for Get {
     }
 }
 
-impl Apply for Get {
+impl Apply for LPop {
     fn apply(self, map: Collections<String, String>) -> Reply {
         let result = {
-            let list = map.strings.read();
-            let result = (*list).get(&self.key);
-            result.cloned()
+            let mut list = map.list.write();
+            let result = (*list).lpop(&self.key);
+            result
         };
         Reply::from(result)
     }

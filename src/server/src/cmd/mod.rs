@@ -1,21 +1,23 @@
 mod delete;
 mod field_builder;
 mod get;
+mod lpop;
 mod lpush;
 mod lrange;
+mod ping;
+mod pong;
 mod rpush;
 mod set;
 mod traits;
-mod ping;
-mod pong;
 
 pub(crate) use delete::Delete;
 pub(crate) use field_builder::FieldBuilder;
 pub(crate) use get::Get;
+pub(crate) use lpop::LPop;
 pub(crate) use lpush::LPush;
 pub(crate) use lrange::LRange;
+pub(crate) use ping::Ping;
+pub(crate) use pong::Pong;
 pub(crate) use rpush::RPush;
 pub(crate) use set::Set;
 pub(crate) use traits::{Apply, Builder};
-pub(crate) use ping::Ping;
-pub(crate) use pong::Pong;

@@ -4,10 +4,9 @@ use crate::reply::Reply;
 use crate::service::Collections;
 use crate::service::Error;
 use std::convert::Infallible;
+use std::marker::Unpin;
 use std::num::ParseIntError;
 use std::str::FromStr;
-use std::marker::Unpin;
-use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 
 pub(crate) struct LRange {
@@ -25,7 +24,6 @@ impl Builder for LRange {
         })
     }
 }
-
 
 impl Apply for LRange {
     fn apply(self, map: Collections<String, String>) -> Reply {

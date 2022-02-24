@@ -6,7 +6,6 @@ use crate::service::Error;
 use std::convert::Infallible;
 use std::str::FromStr;
 
-
 pub(crate) struct Pong {}
 
 impl Builder for Pong {

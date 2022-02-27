@@ -3,7 +3,8 @@ use super::parse::{parse_array_len, parse_bulk};
 // use super::reply::{reply_array_size, reply_bulk, reply_integer};
 use super::reply::Reply;
 use crate::cmd::{
-    Apply, Builder, Delete, FieldBuilder, Get, LPop, LPush, LRange, Ping, Pong, RPush, Set,
+    Apply, Builder, Delete, FieldBuilder, Get, LLen, LPop, LPush, LRange, Ping, Pong, RPop, RPush,
+    Set,
 };
 use collections::{List, Strings};
 use parking_lot::RwLock;
@@ -162,6 +163,14 @@ impl Service {
             "LPOP" => {
                 let mut lpop = LPop::build(&mut builder)?;
                 Ok(lpop.apply(collections))
+            }
+            "RPOP" => {
+                let mut rpop = RPop::build(&mut builder)?;
+                Ok(rpop.apply(collections))
+            }
+            "LLEN" => {
+                let mut llen = LLen::build(&mut builder)?;
+                Ok(llen.apply(collections))
             }
             _ => Err(Error::Protocol(String::from("command error"))),
         }

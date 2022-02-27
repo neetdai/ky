@@ -98,4 +98,15 @@ where
     pub fn lpop(&mut self, key: &K) -> Option<V> {
         self.inner.get_mut(key).and_then(|list| list.pop_front())
     }
+
+    pub fn rpop(&mut self, key: &K) -> Option<V> {
+        self.inner.get_mut(key).and_then(|list| list.pop_back())
+    }
+
+    pub fn llen(&self, key: &K) -> usize {
+        self.inner
+            .get(key)
+            .map(|list| list.len())
+            .unwrap_or_default()
+    }
 }

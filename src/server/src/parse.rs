@@ -18,6 +18,9 @@ pub(super) fn parse_array_len(buf: &str) -> Result<(&str, usize), Error> {
 }
 
 pub(super) fn parse_bulk(buf: &str) -> Result<(&str, Option<&str>), Error> {
+    if buf.len() < 2 {
+        return Err(Error::Protocol(String::from("bulk sytanx error")));
+    }
     let (first, buf) = buf.split_at(1);
     if first != "$" {
         return Err(Error::Protocol(String::from("bulk sytanx error")));

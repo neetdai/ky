@@ -7,6 +7,7 @@ use std::convert::Infallible;
 use std::marker::Unpin;
 use std::num::ParseIntError;
 use std::str::FromStr;
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
 pub(crate) struct LRange {
@@ -25,20 +26,16 @@ impl Builder for LRange {
     }
 }
 
-impl Apply for LRange {
-    fn apply(self, map: Collections<String, String>) -> Reply {
+impl LRange {
+    pub fn apply(self, map: Collections<String, String>) -> Vec<Arc<String>> {
         let list = {
             let list = map.list.read();
             let result = (*list)
                 .lrange(&self.key, self.start, self.stop)
-                .map(|list| {
-                    list.cloned()
-                        .map(|item| Reply::from(item))
-                        .collect::<Vec<Reply>>()
-                })
+                .map(|list| list.cloned().collect::<Vec<Arc<String>>>())
                 .unwrap_or_default();
             result
         };
-        Reply::from(list)
+        list
     }
 }

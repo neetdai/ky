@@ -1,7 +1,8 @@
 use crate::service::Error;
 use std::convert::{From, Into};
-use std::io::Result as IoResult;
+use std::io::{IoSlice, Result as IoResult};
 use std::string::ToString;
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 
 const SIMPLE_STRINGS: &[u8; 1] = b"+";
@@ -76,7 +77,7 @@ pub(super) enum Reply {
     Bulk(String),
     Number(String),
     Error(String),
-    Array(Vec<Reply>),
+    ArcString(Arc<String>),
 }
 
 impl From<String> for Reply {
@@ -164,11 +165,6 @@ impl From<Error> for Reply {
         Reply::Error(inner.to_string())
     }
 }
-impl From<Vec<Reply>> for Reply {
-    fn from(inner: Vec<Reply>) -> Self {
-        Reply::Array(inner)
-    }
-}
 impl<I> From<Option<I>> for Reply
 where
     I: Into<Reply>,
@@ -180,52 +176,66 @@ where
         }
     }
 }
+impl From<Arc<String>> for Reply {
+    fn from(inner: Arc<String>) -> Self {
+        Reply::ArcString(inner)
+    }
+}
 
 impl Reply {
+    #[inline]
     pub(super) async fn write<A>(&self, write_stream: &mut A) -> IoResult<()>
     where
         A: AsyncWriteExt + Unpin,
     {
         match self {
             Self::Simple(inner) => {
-                write_stream.write(SIMPLE_STRINGS).await?;
-                write_stream.write(inner.as_bytes()).await?;
-                write_stream.write(LINE).await?;
+                let buffer = [
+                    IoSlice::new(SIMPLE_STRINGS),
+                    IoSlice::new(inner.as_bytes()),
+                    IoSlice::new(LINE),
+                ];
+                write_stream.write_vectored(&buffer).await?;
             }
             Self::Number(inner) => {
-                let inner = inner.to_string();
-                write_stream.write(NUMBER).await?;
-                write_stream.write(inner.as_bytes()).await?;
-                write_stream.write(LINE).await?;
+                let buffer = [
+                    IoSlice::new(NUMBER),
+                    IoSlice::new(inner.as_bytes()),
+                    IoSlice::new(LINE),
+                ];
+                write_stream.write_vectored(&buffer).await?;
             }
             Self::Error(inner) => {
-                write_stream.write(ERRORS).await?;
-                write_stream.write(inner.as_bytes()).await?;
-                write_stream.write(LINE).await?;
+                let buffer = [
+                    IoSlice::new(ERRORS),
+                    IoSlice::new(inner.as_bytes()),
+                    IoSlice::new(LINE),
+                ];
+                write_stream.write_vectored(&buffer).await?;
             }
             Self::Bulk(inner) => {
                 let len = inner.len();
                 let len_str = len.to_string();
-                write_stream.write(BULK_STRINGS).await?;
-                write_stream.write(len_str.as_bytes()).await?;
-                write_stream.write(LINE).await?;
-                write_stream.write(inner.as_bytes()).await?;
-                write_stream.write(LINE).await?;
+                let buffer = [
+                    IoSlice::new(BULK_STRINGS),
+                    IoSlice::new(len_str.as_bytes()),
+                    IoSlice::new(LINE),
+                    IoSlice::new(inner.as_bytes()),
+                    IoSlice::new(LINE),
+                ];
+                write_stream.write_vectored(&buffer).await?;
             }
-            Self::Array(inner) => {
-                let mut buff = Vec::with_capacity(1024);
-
+            Self::ArcString(inner) => {
                 let len = inner.len();
                 let len_str = len.to_string();
-                buff.extend_from_slice(ARRAY);
-                buff.extend_from_slice(len_str.as_bytes());
-                buff.extend_from_slice(LINE);
-
-                for item in inner {
-                    item.transmute(&mut buff);
-                }
-
-                write_stream.write(buff.as_slice()).await?;
+                let buffer = [
+                    IoSlice::new(BULK_STRINGS),
+                    IoSlice::new(len_str.as_bytes()),
+                    IoSlice::new(LINE),
+                    IoSlice::new(inner.as_bytes()),
+                    IoSlice::new(LINE),
+                ];
+                write_stream.write_vectored(&buffer).await?;
             }
         }
         Ok(())
@@ -236,50 +246,12 @@ impl Reply {
         A: AsyncWriteExt + Unpin,
     {
         let len = len.to_string();
-        write_stream.write(ARRAY).await?;
-        write_stream.write(len.as_bytes()).await?;
-        write_stream.write(LINE).await?;
+        let buffer = [
+            IoSlice::new(ARRAY),
+            IoSlice::new(len.as_bytes()),
+            IoSlice::new(LINE),
+        ];
+        write_stream.write_vectored(&buffer).await?;
         Ok(())
-    }
-
-    fn transmute(&self, buff: &mut Vec<u8>) {
-        match self {
-            Self::Simple(inner) => {
-                buff.extend_from_slice(SIMPLE_STRINGS);
-                buff.extend_from_slice(inner.as_bytes());
-                buff.extend_from_slice(LINE);
-            }
-            Self::Number(inner) => {
-                let inner = inner.to_string();
-                buff.extend_from_slice(NUMBER);
-                buff.extend_from_slice(inner.as_bytes());
-                buff.extend_from_slice(LINE);
-            }
-            Self::Error(inner) => {
-                buff.extend_from_slice(ERRORS);
-                buff.extend_from_slice(inner.as_bytes());
-                buff.extend_from_slice(LINE);
-            }
-            Self::Bulk(inner) => {
-                let len = inner.len();
-                let len_str = len.to_string();
-                buff.extend_from_slice(BULK_STRINGS);
-                buff.extend_from_slice(len_str.as_bytes());
-                buff.extend_from_slice(LINE);
-                buff.extend_from_slice(inner.as_bytes());
-                buff.extend_from_slice(LINE);
-            }
-            Self::Array(inner) => {
-                let len = inner.len();
-                let len_str = len.to_string();
-                buff.extend_from_slice(ARRAY);
-                buff.extend_from_slice(len_str.as_bytes());
-                buff.extend_from_slice(LINE);
-
-                for item in inner {
-                    item.transmute(buff);
-                }
-            }
-        }
     }
 }

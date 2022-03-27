@@ -1,6 +1,7 @@
 use crate::service::Error;
 use std::str::FromStr;
 
+#[inline]
 pub(super) fn parse_array_len(buf: &str) -> Result<(&str, usize), Error> {
     let (first, buf) = buf.split_at(1);
     if first != "*" {
@@ -17,6 +18,7 @@ pub(super) fn parse_array_len(buf: &str) -> Result<(&str, usize), Error> {
     Ok((buf, size))
 }
 
+#[inline]
 pub(super) fn parse_bulk(buf: &str) -> Result<(&str, Option<&str>), Error> {
     if buf.len() < 2 {
         return Err(Error::Protocol(String::from("bulk sytanx error")));

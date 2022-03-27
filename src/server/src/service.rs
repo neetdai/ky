@@ -28,7 +28,7 @@ pub(crate) struct Collections<K, V>
 where
     K: Eq + Hash,
 {
-    pub(crate) list: Arc<RwLock<List<K, V>>>,
+    pub(crate) list: Arc<RwLock<List<K, Arc<V>>>>,
 
     pub(crate) strings: Arc<RwLock<Strings<K, V>>>,
 }
@@ -83,10 +83,6 @@ impl Service {
             let map = collections.clone();
             match self.process(map).await {
                 Ok(reply) => {
-                    if let Err(e) = reply.write(&mut self.write_stream).await {
-                        error!("{}", e);
-                        break;
-                    }
                     if let Err(e) = self.write_stream.flush().await {
                         error!("{}", e);
                         break;
@@ -101,7 +97,7 @@ impl Service {
         }
     }
 
-    async fn process(&mut self, collections: Collections<String, String>) -> Result<Reply, Error> {
+    async fn process(&mut self, collections: Collections<String, String>) -> Result<(), Error> {
         let mut buff = String::new();
         self.read_buff(&mut buff).await?;
 
@@ -129,48 +125,77 @@ impl Service {
             // "COMMAND" => Ok(Message::Command),
             "PING" => {
                 let ping = Ping::build(&mut builder).unwrap();
-                Ok(ping.apply(collections))
+                let reply = ping.apply(collections);
+                reply.write(&mut self.write_stream).await?;
+                Ok(())
             }
             "PONG" => {
                 let pong = Pong::build(&mut builder).unwrap();
-                Ok(pong.apply(collections))
+                let reply = pong.apply(collections);
+                reply.write(&mut self.write_stream).await?;
+                Ok(())
             }
             // "CONFIG" => Ok(Message::Config),
             "SET" => {
                 let mut set = Set::build(&mut builder)?;
-                Ok(set.apply(collections))
+                let reply = set.apply(collections);
+                reply.write(&mut self.write_stream).await?;
+                Ok(())
             }
             "GET" => {
                 let mut get = Get::build(&mut builder)?;
-                Ok(get.apply(collections))
+                let reply = get.apply(collections);
+                reply.write(&mut self.write_stream).await?;
+                Ok(())
             }
             "DEL" => {
                 let mut delete = Delete::build(&mut builder)?;
-                Ok(delete.apply(collections))
+                let reply = delete.apply(collections);
+                reply.write(&mut self.write_stream).await?;
+                Ok(())
             }
             "RPUSH" => {
                 let mut rpush = RPush::build(&mut builder)?;
-                Ok(rpush.apply(collections))
+                let reply = rpush.apply(collections);
+                reply.write(&mut self.write_stream).await?;
+                Ok(())
             }
             "LPUSH" => {
                 let mut lpush = LPush::build(&mut builder)?;
-                Ok(lpush.apply(collections))
+                let reply = lpush.apply(collections);
+                reply.write(&mut self.write_stream).await?;
+                Ok(())
             }
             "LRANGE" => {
                 let mut lrange = LRange::build(&mut builder)?;
-                Ok(lrange.apply(collections))
+                let list = lrange.apply(collections);
+
+                let list_len = list.len();
+                Reply::array_len_write(list_len, &mut self.write_stream).await?;
+
+                for item in list {
+                    let reply = Reply::from(item);
+                    reply.write(&mut self.write_stream).await?;
+                }
+                Ok(())
             }
             "LPOP" => {
                 let mut lpop = LPop::build(&mut builder)?;
-                Ok(lpop.apply(collections))
+                let reply = lpop.apply(collections);
+                reply.write(&mut self.write_stream).await?;
+                Ok(())
             }
             "RPOP" => {
                 let mut rpop = RPop::build(&mut builder)?;
-                Ok(rpop.apply(collections))
+                let reply = rpop.apply(collections);
+                reply.write(&mut self.write_stream).await?;
+                Ok(())
             }
             "LLEN" => {
                 let mut llen = LLen::build(&mut builder)?;
-                Ok(llen.apply(collections))
+                let reply = llen.apply(collections);
+                reply.write(&mut self.write_stream).await?;
+                Ok(())
             }
             _ => Err(Error::Protocol(String::from("command error"))),
         }

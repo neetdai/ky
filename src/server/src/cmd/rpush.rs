@@ -6,6 +6,7 @@ use crate::service::Error;
 use std::convert::Infallible;
 use std::io::Result as IoResult;
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub(crate) struct RPush {
     key: String,
@@ -27,7 +28,7 @@ impl Apply for RPush {
     fn apply(self, map: Collections<String, String>) -> Reply {
         let len = {
             let mut list = map.list.write();
-            let len = (*list).rpush(self.key, self.values.into_iter());
+            let len = (*list).rpush(self.key, self.values.into_iter().map(|item| Arc::new(item)));
             len
         };
         Reply::from(len)

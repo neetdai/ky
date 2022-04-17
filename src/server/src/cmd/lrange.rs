@@ -1,8 +1,8 @@
 use crate::cmd::field_builder::FieldBuilder;
 use crate::cmd::traits::{Apply, Builder};
 use crate::reply::Reply;
-use crate::service::Collections;
 use crate::service::Error;
+use database::Database;
 use std::convert::Infallible;
 use std::marker::Unpin;
 use std::num::ParseIntError;
@@ -27,15 +27,7 @@ impl Builder for LRange {
 }
 
 impl LRange {
-    pub fn apply(self, map: Collections<String, String>) -> Vec<Arc<String>> {
-        let list = {
-            let list = map.list.read();
-            let result = (*list)
-                .lrange(&self.key, self.start, self.stop)
-                .map(|list| list.cloned().collect::<Vec<Arc<String>>>())
-                .unwrap_or_default();
-            result
-        };
-        list
+    pub fn apply(self, db: Database) -> Vec<Arc<String>> {
+        db.lrange(self.key, self.start, self.stop)
     }
 }

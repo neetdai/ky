@@ -1,8 +1,8 @@
 use crate::cmd::field_builder::FieldBuilder;
 use crate::cmd::traits::{Apply, Builder};
 use crate::reply::Reply;
-use crate::service::Collections;
 use crate::service::Error;
+use database::Database;
 use std::convert::Infallible;
 use std::str::FromStr;
 
@@ -19,12 +19,8 @@ impl Builder for RPop {
 }
 
 impl Apply for RPop {
-    fn apply(self, map: Collections<String, String>) -> Reply {
-        let result = {
-            let mut list = map.list.write();
-            let result = (*list).rpop(&self.key);
-            result
-        };
-        Reply::from(result)
+    fn apply(self, db: Database) -> Reply {
+        let mut db = db;
+        Reply::from(db.rpop(self.key))
     }
 }

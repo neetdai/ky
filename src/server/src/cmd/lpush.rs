@@ -1,8 +1,8 @@
 use crate::cmd::field_builder::FieldBuilder;
 use crate::cmd::traits::{Apply, Builder};
 use crate::reply::Reply;
-use crate::service::Collections;
 use crate::service::Error;
+use database::Database;
 use std::convert::Infallible;
 use std::io::Result as IoResult;
 use std::str::FromStr;
@@ -25,12 +25,8 @@ impl Builder for LPush {
 }
 
 impl Apply for LPush {
-    fn apply(self, map: Collections<String, String>) -> Reply {
-        let len = {
-            let mut list = map.list.write();
-            let len = (*list).lpush(self.key, self.values.into_iter().map(|item| Arc::new(item)));
-            len
-        };
-        Reply::from(len)
+    fn apply(self, db: Database) -> Reply {
+        let mut db = db;
+        Reply::from(db.lpush(self.key, self.values))
     }
 }

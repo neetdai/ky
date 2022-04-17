@@ -1,8 +1,8 @@
 use crate::cmd::field_builder::FieldBuilder;
 use crate::cmd::traits::{Apply, Builder};
 use crate::reply::Reply;
-use crate::service::Collections;
 use crate::service::Error;
+use database::Database;
 use std::convert::Infallible;
 use std::str::FromStr;
 
@@ -15,7 +15,7 @@ impl Builder for Pong {
 }
 
 impl Apply for Pong {
-    fn apply(self, _: Collections<String, String>) -> Reply {
+    fn apply(self, _: Database) -> Reply {
         Reply::Simple(String::from("PING"))
     }
 }

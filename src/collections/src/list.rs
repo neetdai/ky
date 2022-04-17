@@ -1,68 +1,39 @@
-use hashbrown::HashMap;
 use std::cmp::Eq;
 use std::collections::{vec_deque::Iter, VecDeque};
-use std::hash::Hash;
 use std::iter::{Extend, IntoIterator};
 use std::ops::Range;
 
-pub struct List<K, V> {
-    inner: HashMap<K, VecDeque<V>>,
+pub struct List<V> {
+    inner: VecDeque<V>,
 }
 
-impl<K, V> List<K, V> {
+impl<V> List<V> {
     pub fn new() -> Self {
         Self {
-            inner: HashMap::default(),
+            inner: VecDeque::new(),
         }
     }
 }
 
-impl<K, V> List<K, V>
-where
-    K: Eq + Hash,
-{
-    pub fn rpush<I>(&mut self, key: K, values: I) -> usize
+impl<V> List<V> {
+    pub fn rpush<I>(&mut self, values: I) -> usize
     where
         I: IntoIterator<Item = V>,
     {
-        match self.inner.get_key_value_mut(&key) {
-            Some((_, list)) => {
-                list.extend(values);
-                list.len()
-            }
-            None => {
-                let mut list = VecDeque::new();
-                list.extend(values);
-                let len = list.len();
-                self.inner.insert(key, list);
-                len
-            }
-        }
+        self.inner.extend(values);
+        self.inner.len()
     }
 
-    pub fn lpush<I>(&mut self, key: K, values: I) -> usize
+    pub fn lpush<I>(&mut self, values: I) -> usize
     where
         I: IntoIterator<Item = V>,
     {
-        match self.inner.get_key_value_mut(&key) {
-            Some((_, list)) => {
-                let mut len = list.len();
-                for item in values {
-                    len += 1;
-                    list.push_front(item);
-                }
-                len
-            }
-            None => {
-                let mut list = VecDeque::new();
-                for item in values {
-                    list.push_front(item);
-                }
-                let len = list.len();
-                self.inner.insert(key, list);
-                len
-            }
+        let mut len = self.inner.len();
+        for item in values {
+            len += 1;
+            self.inner.push_front(item);
         }
+        len
     }
 
     fn range(len: usize, mut start: i64, mut stop: i64) -> Range<usize> {
@@ -88,25 +59,20 @@ where
         }
     }
 
-    pub fn lrange(&self, key: &K, start: i64, stop: i64) -> Option<Iter<'_, V>> {
-        self.inner.get(key).map(|list| {
-            let range = Self::range(list.len(), start, stop);
-            list.range(range)
-        })
+    pub fn lrange(&self, start: i64, stop: i64) -> Iter<'_, V> {
+        let range = Self::range(self.inner.len(), start, stop);
+        self.inner.range(range)
     }
 
-    pub fn lpop(&mut self, key: &K) -> Option<V> {
-        self.inner.get_mut(key).and_then(|list| list.pop_front())
+    pub fn lpop(&mut self) -> Option<V> {
+        self.inner.pop_front()
     }
 
-    pub fn rpop(&mut self, key: &K) -> Option<V> {
-        self.inner.get_mut(key).and_then(|list| list.pop_back())
+    pub fn rpop(&mut self) -> Option<V> {
+        self.inner.pop_back()
     }
 
-    pub fn llen(&self, key: &K) -> usize {
-        self.inner
-            .get(key)
-            .map(|list| list.len())
-            .unwrap_or_default()
+    pub fn llen(&self) -> usize {
+        self.inner.len()
     }
 }

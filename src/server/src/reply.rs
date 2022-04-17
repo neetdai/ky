@@ -1,5 +1,6 @@
-use crate::service::Error;
+use crate::service::Error as MyError;
 use std::convert::{From, Into};
+use std::error::Error;
 use std::io::{IoSlice, Result as IoResult};
 use std::string::ToString;
 use std::sync::Arc;
@@ -160,8 +161,8 @@ impl From<f64> for Reply {
         Reply::Bulk(inner.to_string())
     }
 }
-impl From<Error> for Reply {
-    fn from(inner: Error) -> Self {
+impl From<MyError> for Reply {
+    fn from(inner: MyError) -> Self {
         Reply::Error(inner.to_string())
     }
 }
@@ -173,6 +174,18 @@ where
         match inner {
             Some(inner) => inner.into(),
             None => Reply::Simple(String::from("nil")),
+        }
+    }
+}
+impl<I, E> From<Result<I, E>> for Reply
+where
+    I: Into<Reply>,
+    E: Error,
+{
+    fn from(inner: Result<I, E>) -> Self {
+        match inner {
+            Ok(inner) => inner.into(),
+            Err(e) => Reply::Error(e.to_string()),
         }
     }
 }

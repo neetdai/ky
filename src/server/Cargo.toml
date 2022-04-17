@@ -9,5 +9,5 @@ edition = "2021"
 tokio = {verion = "1.16.1", features = ["net", "io-util", "rt", "sync", "time"]}
 tracing = "0.1.29"
 thiserror = "1.0.24"
-collections = {path = "../collections/"}
+database = {path = "../database/"}
 parking_lot = "0.12.0"

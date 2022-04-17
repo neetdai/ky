@@ -1,8 +1,8 @@
 use crate::cmd::field_builder::FieldBuilder;
 use crate::cmd::traits::{Apply, Builder};
 use crate::reply::Reply;
-use crate::service::Collections;
 use crate::service::Error;
+use database::{Database, Key};
 use std::convert::Infallible;
 use std::str::FromStr;
 
@@ -21,12 +21,8 @@ impl Builder for Delete {
 }
 
 impl Apply for Delete {
-    fn apply(self, map: Collections<String, String>) -> Reply {
-        let len = {
-            let mut list = map.strings.write();
-            let len = (*list).delete(self.keys.into_iter());
-            len
-        };
-        Reply::from(len)
+    fn apply(self, db: Database) -> Reply {
+        let mut db = db;
+        Reply::from(db.delete(self.keys))
     }
 }

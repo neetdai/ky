@@ -6,7 +6,8 @@ use crate::cmd::{
     Apply, Builder, Delete, FieldBuilder, Get, LLen, LPop, LPush, LRange, Ping, Pong, RPop, RPush,
     Set,
 };
-use collections::{List, Strings};
+// use db::{List, Strings};
+use database::Database;
 use parking_lot::RwLock;
 use std::cmp::Eq;
 use std::fmt::Write;
@@ -22,28 +23,6 @@ use tokio::io::{split, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Rea
 use tokio::net::TcpStream;
 use tokio::task::spawn_local;
 use tracing::{error, trace};
-
-#[derive(Clone)]
-pub(crate) struct Collections<K, V>
-where
-    K: Eq + Hash,
-{
-    pub(crate) list: Arc<RwLock<List<K, Arc<V>>>>,
-
-    pub(crate) strings: Arc<RwLock<Strings<K, V>>>,
-}
-
-impl<K, V> Collections<K, V>
-where
-    K: Eq + Hash,
-{
-    pub(crate) fn new() -> Self {
-        Self {
-            list: Arc::new(RwLock::new(List::new())),
-            strings: Arc::new(RwLock::new(Strings::new())),
-        }
-    }
-}
 
 #[derive(Debug, Error)]
 pub(crate) enum Error {
@@ -78,9 +57,9 @@ impl Service {
         }
     }
 
-    pub(crate) async fn run(mut self, collections: Collections<String, String>) {
+    pub(crate) async fn run(mut self, db: Database) {
         'main: loop {
-            let map = collections.clone();
+            let map = db.clone();
             match self.process(map).await {
                 Ok(reply) => {
                     if let Err(e) = self.write_stream.flush().await {
@@ -97,7 +76,7 @@ impl Service {
         }
     }
 
-    async fn process(&mut self, collections: Collections<String, String>) -> Result<(), Error> {
+    async fn process(&mut self, db: Database) -> Result<(), Error> {
         let mut buff = String::new();
         self.read_buff(&mut buff).await?;
 
@@ -125,50 +104,50 @@ impl Service {
             // "COMMAND" => Ok(Message::Command),
             "PING" => {
                 let ping = Ping::build(&mut builder).unwrap();
-                let reply = ping.apply(collections);
+                let reply = ping.apply(db);
                 reply.write(&mut self.write_stream).await?;
                 Ok(())
             }
             "PONG" => {
                 let pong = Pong::build(&mut builder).unwrap();
-                let reply = pong.apply(collections);
+                let reply = pong.apply(db);
                 reply.write(&mut self.write_stream).await?;
                 Ok(())
             }
             // "CONFIG" => Ok(Message::Config),
             "SET" => {
                 let mut set = Set::build(&mut builder)?;
-                let reply = set.apply(collections);
+                let reply = set.apply(db);
                 reply.write(&mut self.write_stream).await?;
                 Ok(())
             }
             "GET" => {
                 let mut get = Get::build(&mut builder)?;
-                let reply = get.apply(collections);
+                let reply = get.apply(db);
                 reply.write(&mut self.write_stream).await?;
                 Ok(())
             }
             "DEL" => {
                 let mut delete = Delete::build(&mut builder)?;
-                let reply = delete.apply(collections);
+                let reply = delete.apply(db);
                 reply.write(&mut self.write_stream).await?;
                 Ok(())
             }
             "RPUSH" => {
                 let mut rpush = RPush::build(&mut builder)?;
-                let reply = rpush.apply(collections);
+                let reply = rpush.apply(db);
                 reply.write(&mut self.write_stream).await?;
                 Ok(())
             }
             "LPUSH" => {
                 let mut lpush = LPush::build(&mut builder)?;
-                let reply = lpush.apply(collections);
+                let reply = lpush.apply(db);
                 reply.write(&mut self.write_stream).await?;
                 Ok(())
             }
             "LRANGE" => {
                 let mut lrange = LRange::build(&mut builder)?;
-                let list = lrange.apply(collections);
+                let list = lrange.apply(db);
 
                 let list_len = list.len();
                 Reply::array_len_write(list_len, &mut self.write_stream).await?;
@@ -181,19 +160,19 @@ impl Service {
             }
             "LPOP" => {
                 let mut lpop = LPop::build(&mut builder)?;
-                let reply = lpop.apply(collections);
+                let reply = lpop.apply(db);
                 reply.write(&mut self.write_stream).await?;
                 Ok(())
             }
             "RPOP" => {
                 let mut rpop = RPop::build(&mut builder)?;
-                let reply = rpop.apply(collections);
+                let reply = rpop.apply(db);
                 reply.write(&mut self.write_stream).await?;
                 Ok(())
             }
             "LLEN" => {
                 let mut llen = LLen::build(&mut builder)?;
-                let reply = llen.apply(collections);
+                let reply = llen.apply(db);
                 reply.write(&mut self.write_stream).await?;
                 Ok(())
             }

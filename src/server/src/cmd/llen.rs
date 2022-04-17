@@ -1,8 +1,8 @@
 use crate::cmd::field_builder::FieldBuilder;
 use crate::cmd::traits::{Apply, Builder};
 use crate::reply::Reply;
-use crate::service::Collections;
 use crate::service::Error;
+use database::Database;
 use std::convert::Infallible;
 use std::str::FromStr;
 
@@ -19,12 +19,7 @@ impl Builder for LLen {
 }
 
 impl Apply for LLen {
-    fn apply(self, map: Collections<String, String>) -> Reply {
-        let result = {
-            let list = map.list.read();
-            let result = (*list).llen(&self.key);
-            result
-        };
-        Reply::from(result)
+    fn apply(self, db: Database) -> Reply {
+        Reply::from(db.llen(self.key))
     }
 }

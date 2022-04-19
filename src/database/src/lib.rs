@@ -25,13 +25,19 @@ pub struct TypeError;
 
 impl Display for TypeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "type error")
+        write!(
+            f,
+            "WRONGTYPE Operation against a key holding the wrong kind of value"
+        )
     }
 }
 
 impl Debug for TypeError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "type error")
+        write!(
+            f,
+            "WRONGTYPE Operation against a key holding the wrong kind of value"
+        )
     }
 }
 
@@ -200,5 +206,20 @@ impl Database {
                     .ok()
             })
             .unwrap_or(Vec::with_capacity(0))
+    }
+
+    pub fn mget<I, K>(&self, keys: I) -> Vec<Arc<String>>
+    where
+        I: IntoIterator<Item = K>,
+        K: Into<Key>,
+    {
+        keys.into_iter()
+            .filter_map(|key| {
+                let key = key.into();
+                let map = self.read(&key);
+                map.get(&key)
+                    .and_then(|item| item.with_string().ok().map(|value| value.get().clone()))
+            })
+            .collect()
     }
 }

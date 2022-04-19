@@ -3,8 +3,8 @@ use super::parse::{parse_array_len, parse_bulk};
 // use super::reply::{reply_array_size, reply_bulk, reply_integer};
 use super::reply::Reply;
 use crate::cmd::{
-    Apply, Builder, Delete, FieldBuilder, Get, LLen, LPop, LPush, LRange, Ping, Pong, RPop, RPush,
-    Set,
+    Apply, Builder, Delete, FieldBuilder, Get, LLen, LPop, LPush, LRange, MGet, Ping, Pong, RPop,
+    RPush, Set,
 };
 // use db::{List, Strings};
 use database::Database;
@@ -174,6 +174,19 @@ impl Service {
                 let mut llen = LLen::build(&mut builder)?;
                 let reply = llen.apply(db);
                 reply.write(&mut self.write_stream).await?;
+                Ok(())
+            }
+            "MGET" => {
+                let mut mget = MGet::build(&mut builder)?;
+                let list = mget.apply(db);
+
+                let list_len = list.len();
+                Reply::array_len_write(list_len, &mut self.write_stream).await?;
+
+                for item in list {
+                    let reply = Reply::from(item);
+                    reply.write(&mut self.write_stream).await?;
+                }
                 Ok(())
             }
             _ => Err(Error::Protocol(String::from("command error"))),

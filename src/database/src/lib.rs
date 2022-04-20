@@ -18,6 +18,7 @@ use std::fmt::Display;
 use std::fmt::{Formatter, Result as FmtResult};
 use std::iter::IntoIterator;
 use std::sync::Arc;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 const CRC_HASHER: Crc<u16> = Crc::<u16>::new(&CRC_16_IBM_SDLC);
 
@@ -210,10 +211,10 @@ impl Database {
 
     pub fn mget<I, K>(&self, keys: I) -> Vec<Arc<String>>
     where
-        I: IntoIterator<Item = K>,
+        I: IntoParallelIterator<Item = K>,
         K: Into<Key>,
     {
-        keys.into_iter()
+        keys.into_par_iter()
             .filter_map(|key| {
                 let key = key.into();
                 let map = self.read(&key);

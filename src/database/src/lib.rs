@@ -7,7 +7,7 @@ use crate::slot::Slot;
 pub use crate::value::{Item, Value};
 use collections::{List, Strings};
 
-use crc::{Crc, CRC_16_IBM_SDLC};
+use crc32fast;
 use hashbrown::HashMap;
 use parking_lot::{RwLockReadGuard, RwLockWriteGuard};
 use std::convert::Into;
@@ -19,7 +19,7 @@ use std::fmt::{Formatter, Result as FmtResult};
 use std::iter::IntoIterator;
 use std::sync::Arc;
 
-const CRC_HASHER: Crc<u16> = Crc::<u16>::new(&CRC_16_IBM_SDLC);
+const SLOT_LEN: u32 = 32;
 
 pub struct TypeError;
 
@@ -51,19 +51,23 @@ pub struct Database {
 impl Default for Database {
     fn default() -> Self {
         Self {
-            slots: Arc::new((0..36).map(|_| Slot::new()).collect::<Vec<Slot>>()),
+            slots: Arc::new((0..SLOT_LEN as usize).map(|_| Slot::new()).collect::<Vec<Slot>>()),
         }
     }
 }
 
 impl Database {
+    fn find_point(key: &[u8]) -> usize {
+        (crc32fast::hash(key) % SLOT_LEN) as usize
+    }
+
     fn read(&self, key: &String) -> RwLockReadGuard<'_, HashMap<Key, Value<Arc<String>>>> {
-        let point = (CRC_HASHER.checksum(key.as_bytes()) % 36) as usize;
+        let point =  Self::find_point(key.as_bytes());
         (&self.slots[point]).read()
     }
 
     fn write(&mut self, key: &String) -> RwLockWriteGuard<'_, HashMap<Key, Value<Arc<String>>>> {
-        let point = (CRC_HASHER.checksum(key.as_bytes()) % 36) as usize;
+        let point = Self::find_point(key.as_bytes());
         (&self.slots[point]).write()
     }
 
@@ -234,7 +238,7 @@ impl Database {
                 let key = key.into();
                 let value = Strings::set(value.into());
                 let value = Value::new_string(value);
-                let point = (CRC_HASHER.checksum(key.as_bytes()) % 36) as usize;
+                let point = Self::find_point(key.as_bytes());
                 let mut map = (&self.slots[point]).write();
                 map.insert(key, value);
             });

@@ -9,5 +9,4 @@ edition = "2021"
 crc = "2.1.0"
 collections = {path = "../collections/"}
 hashbrown = {version = "0.12.0", features = ["ahash", "inline-more", "rayon", "ahash-compile-time-rng"]}
-rayon = "1.0"
 parking_lot = "0.12.0"

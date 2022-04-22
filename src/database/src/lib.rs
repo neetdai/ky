@@ -18,7 +18,6 @@ use std::fmt::Display;
 use std::fmt::{Formatter, Result as FmtResult};
 use std::iter::IntoIterator;
 use std::sync::Arc;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 const CRC_HASHER: Crc<u16> = Crc::<u16>::new(&CRC_16_IBM_SDLC);
 
@@ -211,10 +210,10 @@ impl Database {
 
     pub fn mget<I, K>(&self, keys: I) -> Vec<Arc<String>>
     where
-        I: IntoParallelIterator<Item = K>,
+        I: IntoIterator<Item = K>,
         K: Into<Key>,
     {
-        keys.into_par_iter()
+        keys.into_iter()
             .filter_map(|key| {
                 let key = key.into();
                 let map = self.read(&key);
@@ -222,5 +221,22 @@ impl Database {
                     .and_then(|item| item.with_string().ok().map(|value| value.get().clone()))
             })
             .collect()
+    }
+
+    pub fn mset<I, K, V>(&mut self, key_value_list: I)
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<Key>,
+        V: Into<Arc<String>>,
+    {
+        key_value_list.into_iter()
+            .for_each(|(key, value)| {
+                let key = key.into();
+                let value = Strings::set(value.into());
+                let value = Value::new_string(value);
+                let point = (CRC_HASHER.checksum(key.as_bytes()) % 36) as usize;
+                let mut map = (&self.slots[point]).write();
+                map.insert(key, value);
+            });
     }
 }

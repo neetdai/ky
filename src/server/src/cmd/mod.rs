@@ -12,6 +12,7 @@ mod pong;
 mod rpop;
 mod rpush;
 mod set;
+mod sadd;
 mod traits;
 
 pub(crate) use delete::Delete;
@@ -28,4 +29,5 @@ pub(crate) use pong::Pong;
 pub(crate) use rpop::RPop;
 pub(crate) use rpush::RPush;
 pub(crate) use set::Set;
+pub(crate) use sadd::SAdd;
 pub(crate) use traits::{Apply, Builder};

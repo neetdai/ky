@@ -5,7 +5,7 @@ mod value;
 pub use crate::key::Key;
 use crate::slot::Slot;
 pub use crate::value::{Item, Value};
-use collections::{List, Strings};
+use collections::{List, Strings, Set};
 
 use crc32fast;
 use hashbrown::HashMap;
@@ -51,7 +51,11 @@ pub struct Database {
 impl Default for Database {
     fn default() -> Self {
         Self {
-            slots: Arc::new((0..SLOT_LEN as usize).map(|_| Slot::new()).collect::<Vec<Slot>>()),
+            slots: Arc::new(
+                (0..SLOT_LEN as usize)
+                    .map(|_| Slot::new())
+                    .collect::<Vec<Slot>>(),
+            ),
         }
     }
 }
@@ -62,7 +66,7 @@ impl Database {
     }
 
     fn read(&self, key: &String) -> RwLockReadGuard<'_, HashMap<Key, Value<Arc<String>>>> {
-        let point =  Self::find_point(key.as_bytes());
+        let point = Self::find_point(key.as_bytes());
         (&self.slots[point]).read()
     }
 
@@ -233,14 +237,37 @@ impl Database {
         K: Into<Key>,
         V: Into<Arc<String>>,
     {
-        key_value_list.into_iter()
-            .for_each(|(key, value)| {
-                let key = key.into();
-                let value = Strings::set(value.into());
-                let value = Value::new_string(value);
-                let point = Self::find_point(key.as_bytes());
-                let mut map = (&self.slots[point]).write();
-                map.insert(key, value);
-            });
+        key_value_list.into_iter().for_each(|(key, value)| {
+            let key = key.into();
+            let value = Strings::set(value.into());
+            let value = Value::new_string(value);
+            let point = Self::find_point(key.as_bytes());
+            let mut map = (&self.slots[point]).write();
+            map.insert(key, value);
+        });
+    }
+
+    pub fn sadd<I, K, V>(&mut self, key: K, members: I) -> usize
+    where
+        I: IntoIterator<Item = V>,
+        K: Into<Key>,
+        V: Into<Arc<String>>,
+    {
+        let key = key.into();
+        let mut map = self.write(&key);
+
+        let value = map
+            .entry(key)
+            .and_modify(|value| {
+                if let Err(_) = value.with_set() {
+                    value.set_sets(Set::new());
+                }
+            })
+            .or_insert_with(|| Value::new_set(Set::new()));
+
+        value
+            .with_set_mut()
+            .unwrap()
+            .sadd(members.into_iter().map(|member| member.into()))
     }
 }

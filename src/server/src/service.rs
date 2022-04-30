@@ -4,7 +4,7 @@ use super::parse::{parse_array_len, parse_bulk};
 use super::reply::Reply;
 use crate::cmd::{
     Apply, Builder, Delete, FieldBuilder, Get, LLen, LPop, LPush, LRange, MGet, Ping, Pong, RPop,
-    RPush, SAdd, Set, Smembers,
+    RPush, SAdd, Set, Smembers, Scard,
 };
 // use db::{List, Strings};
 use database::Database;
@@ -195,7 +195,7 @@ impl Service {
                 reply.write(&mut self.write_stream).await?;
                 Ok(())
             }
-            "smembers" => {
+            "SMEMBERS" => {
                 let mut smembers = Smembers::build(&mut builder)?;
                 let list = smembers.apply(db);
 
@@ -206,6 +206,12 @@ impl Service {
                     let reply = Reply::from(item);
                     reply.write(&mut self.write_stream).await?;
                 }
+                Ok(())
+            }
+            "SCARD" => {
+                let mut scard = Scard::build(&mut builder)?;
+                let reply = scard.apply(db);
+                reply.write(&mut self.write_stream).await?;
                 Ok(())
             }
             _ => Err(Error::Protocol(String::from("command error"))),

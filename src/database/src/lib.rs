@@ -286,4 +286,16 @@ impl Database {
             })
             .unwrap_or(Vec::new())
     }
+
+    pub fn scard<K>(&self, key: K) -> usize
+    where
+        K: Into<Key>,
+    {
+        let key = key.into();
+        let map = self.read(&key);
+
+        map.get(&key)
+            .and_then(|item| item.with_set().map(|set| set.scard()).ok())
+            .unwrap_or(0)
+    }
 }

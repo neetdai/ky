@@ -4,26 +4,25 @@ use crate::reply::Reply;
 use crate::service::Error;
 use database::Database;
 use std::convert::Infallible;
+use std::marker::Unpin;
+use std::num::ParseIntError;
+use std::str::FromStr;
+use std::sync::Arc;
 
-pub(crate) struct SAdd {
+pub(crate) struct Smembers {
     key: String,
-    values: Vec<String>,
 }
 
-impl Builder for SAdd {
+impl Builder for Smembers {
     fn build<'a>(adpater: &mut FieldBuilder<'a>) -> Result<Self, Error> {
         Ok(Self {
             key: adpater.get_field::<String, Infallible>()?,
-            values: (0..adpater.get_total())
-                .map(|_| adpater.get_field::<String, Infallible>())
-                .collect::<Result<Vec<String>, Error>>()?,
         })
     }
 }
 
-impl Apply for SAdd {
-    fn apply(self, db: Database) -> Reply {
-        let mut db = db;
-        Reply::from(db.sadd(self.key, self.values))
+impl Smembers {
+    pub fn apply(self, db: Database) -> Vec<Arc<String>> {
+        db.smembers(self.key)
     }
 }

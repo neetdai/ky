@@ -1,5 +1,5 @@
 use crate::TypeError;
-use collections::{List, Strings, Set};
+use collections::{List, Set, Strings};
 
 pub enum Item<V> {
     List(List<V>),
@@ -26,7 +26,7 @@ impl<V> Value<V> {
 
     pub fn new_set(value: Set<V>) -> Self {
         Self {
-            item: Item::Sets(value)
+            item: Item::Sets(value),
         }
     }
 

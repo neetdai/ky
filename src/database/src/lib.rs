@@ -5,7 +5,7 @@ mod value;
 pub use crate::key::Key;
 use crate::slot::Slot;
 pub use crate::value::{Item, Value};
-use collections::{List, Strings, Set};
+use collections::{List, Set, Strings};
 
 use crc32fast;
 use hashbrown::HashMap;
@@ -269,5 +269,21 @@ impl Database {
             .with_set_mut()
             .unwrap()
             .sadd(members.into_iter().map(|member| member.into()))
+    }
+
+    pub fn smembers<K>(&self, key: K) -> Vec<Arc<String>>
+    where
+        K: Into<Key>,
+    {
+        let key = key.into();
+        let map = self.read(&key);
+
+        map.get(&key)
+            .and_then(|item| {
+                item.with_set()
+                    .map(|set| set.smembers().cloned().collect())
+                    .ok()
+            })
+            .unwrap_or(Vec::new())
     }
 }
